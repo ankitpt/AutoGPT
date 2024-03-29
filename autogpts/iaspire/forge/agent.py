@@ -14,7 +14,7 @@ from forge.sdk import (
     PromptEngine,
     chat_completion_request,
 )
-
+import asyncio
 import os
 from dotenv import load_dotenv
 from langchain import PromptTemplate
@@ -36,6 +36,21 @@ LOG = ForgeLogger(__name__)
 
 load_dotenv()
 open_ai_api = os.getenv('OPENAI_API_KEY')
+
+RETRY_COUNT=3
+RETRY_WAIT_SECONDS = 5
+
+from datetime import datetime
+class JSONEncoderWithBytes(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, bytes):
+            return obj.decode('utf-8')
+        # Add support for encoding datetime.datetime (or Timestamp) objects
+        if isinstance(obj, datetime):
+            return obj.isoformat()  # Convert to ISO formatted string
+        return super().default(obj)
+
+
 
 class ForgeAgent(Agent):
     """
@@ -99,6 +114,7 @@ class ForgeAgent(Agent):
         """
         super().__init__(database, workspace)
         self.abilities = ActionRegister(self)
+        self.model_name = "gpt-3.5-turbo"
 
     async def create_task(self, task_request: TaskRequestBody) -> Task:
         """
@@ -110,12 +126,13 @@ class ForgeAgent(Agent):
         want here.
         """
         task = await super().create_task(task_request)
+        self.messages=[]
         LOG.info(
             f"📦 Task created: {task.task_id} input: {task.input[:40]}{'...' if len(task.input) > 40 else ''}"
         )
         return task
 
-    async def execute_step(self, task_id: str, step_request: StepRequestBody) -> Step:
+    async def execute_step_half_baked(self, task_id: str, step_request: StepRequestBody) -> Step:
         """
         For a tutorial on how to add your own logic please see the offical tutorial series:
         https://aiedge.medium.com/autogpt-forge-e3de53cc58ec
@@ -147,131 +164,217 @@ class ForgeAgent(Agent):
         self.workspace.write(task_id=task_id, path="output.txt", data=b"IASpire preparing your lesson..")
 
         # An example that
+        task = await self.db.get_task(task_id)
         step = await self.db.create_step(
-            task_id=task_id, input=step_request, is_last=True
+            task_id=task_id, input=step_request,
         )
 
-        step_input = 'None'
-        if step.input:
-            step_input = step.input[:19]
-        message = f'	🔄 Step executed: {step.step_id} input: {step_input}'
-        if step.is_last:
-            message = (
-                f'	✅ Final Step completed: {step.step_id} input: {step_input}'
-            )
-        LOG.info(message)
+        system_kwargs = {
+                "abilities": self.abilities.list_abilities_for_prompt(),}
+        
+        prompt_engine=PromptEngine(model=self.model_name)
+        
+        system_prompt = prompt_engine.load_prompt("system-format", **system_kwargs)
+        self.messages = [{"role": "system", "content": system_prompt}]
+        
+        task_kwargs = {"task": task.input}
+        task_prompt = prompt_engine.load_prompt("task-step", **task_kwargs)
+        self.messages.append({"role": "user", "content": task_prompt})
 
-        artifact=await self.db.create_artifact(
-            task_id=task_id,
-            step_id=step.step_id,
-            file_name="output.txt",
-            relative_path="",
-            agent_created=True,
-        )
+#        step_input = 'None'
+ #       if step.input:
+  #          step_input = step.input[:19]
+   #     message = f'	🔄 Step executed: {step.step_id} input: {step_input}'
+    #    if step.is_last:
+     #       message = (
+      #          f'	✅ Final Step completed: {step.step_id} input: {step_input}'
+       #     )
+        #LOG.info(message)
 
-        LOG.info(f'Received input for task {task_id}: {step_request.input}')
-        step.output = customstep(step_request.input)
+       # artifact=await self.db.create_artifact(
+        #    task_id=task_id,
+         #   step_id=step.step_id,
+          #  file_name="output.txt",
+           # relative_path="",
+            #agent_created=True,
+        #)
+
+        #LOG.info(f'Received input for task {task_id}: {step_request.input}')
+        #step.output = customstep(step_request.input)
+        
         return step
 
-def pyqs_search(query:str):
-    # Endpoint URL
-    url = 'https://dev-ai.server.sigiq.ai/async/custom-pyq-retrieval/'
+    async def execute_step_tutorial(self, task_id: str, step_request: StepRequestBody) -> Step:
+        # Firstly we get the task this step is for so we can access the task input
+        task = await self.db.get_task(task_id)
 
-    # JSON body data
-    data = {
-        "query": query,
-        "topics": [],
-        "start_year": 1993,
-        "end_year": 2023
-    }
+        # Create a new step in the database
+        step = await self.db.create_step(
+            task_id=task_id, input=step_request, is_last=False
+        )
 
-    # Headers to indicate JSON content
-    headers = {'Content-Type': 'application/json'}
+        # Log the message
+        LOG.info(f"\t✅ Final Step completed: {step.step_id} input: {step.input[:19]}")
 
-    # Making the GET request with JSON body
-    response = requests.get(url, headers=headers, data=json.dumps(data))
+        # Initialize the PromptEngine with the "gpt-3.5-turbo" model
+        prompt_engine = PromptEngine("gpt-3.5-turbo")
 
-    # Checking if the request was successful
-    if response.ok:
-        # Parsing the JSON response
-        response_data = response.json()
-        print("Response Data:", response_data)
-    else:
-        print("Failed to get data from the endpoint. Status Code:", response.status_code)
+        # Load the system and task prompts
+        system_prompt = prompt_engine.load_prompt("system-format")
 
-    return """Q) The provisions in the Fifth Schedule and Sixth Schedule in the Constitution of India are made in order to (2015)
-protect the interests of Scheduled Tribes
-determine the boundaries between states
-determine the powers, authorities, and responsibilities of Panchayats
-protect the interests of all the border States
-"""
+        # Initialize the messages list with the system prompt
+        messages = [
+            {"role": "system", "content": system_prompt},
+        ]
+        # Define the task parameters
+        task_kwargs = {
+            "task": task.input,
+            "abilities": self.abilities.list_abilities_for_prompt(),
+        }
 
-def get_current_affairs(query):
+        # Load the task prompt with the defined task parameters
+        task_prompt = prompt_engine.load_prompt("task-step", **task_kwargs)
 
-    url="https://dev-ai.server.sigiq.ai/async/news-rag/"
+        LOG.info(f"Task prompt {task_prompt}")
+        # Append the task prompt to the messages list
+        messages.append({"role": "user", "content": task_prompt})
 
-    data = {
-        "query": query,
-    }    
+        try:
+            # Define the parameters for the chat completion request
+            chat_completion_kwargs = {
+                "messages": messages,
+                "model": "gpt-3.5-turbo",
+            }
+            # Make the chat completion request and parse the response
+            chat_response = await chat_completion_request(**chat_completion_kwargs)
+            answer = json.loads(chat_response["choices"][0]["message"]["content"])
 
-    headers = {'Content-Type': 'application/json'}
+            # Log the answer for debugging purposes
+            LOG.info(pprint.pformat(answer))
 
-    response = requests.get(url, headers=headers, data=json.dumps(data))
+        except json.JSONDecodeError as e:
+            # Handle JSON decoding errors
+            LOG.error(f"Unable to decode chat response: {chat_response}")
+        except Exception as e:
+            # Handle other exceptions
+            LOG.error(f"Unable to generate chat response: {e}")
 
-    # Checking if the request was successful
-    if response.ok:
-        # Parsing the JSON response
-        response_data = response.json()
-        print("Response Data:", response_data)
-    else:
-        print("Failed to get data from the endpoint. Status Code:", response.status_code)
-    
-    LOG.info(f"Respohanse Data: {response_data}")
-    return response_data["response"]
+        # Extract the ability from the answer
+        ability = answer["ability"]
 
+        # Run the ability and get the output
+        # We don't actually use the output in this example
+        #output = await self.abilities.run_action(
+         #   task_id, ability["name"], **ability["args"]
+        #)
 
-tools = [
-    Tool(
-        name="Previous_Year_Questions_Search",
-        func=pyqs_search,
-        description="Useful to search for past year questions for UPSC prelims to test student's learning"
-    ),
-    Tool(
-        name="Current_Affairs",
-        func=get_current_affairs,
-        description="Useful to find how given query is related to current affairs"
-    ),    
-]
+        # Set the step output to the "speak" part of the answer
+        step.output = answer["thoughts"]["speak"]
 
-system_message = SystemMessage(
-    content="""You are an expert UPSC teacher who crafts factual and engaging lessons for a UPSC aspirant query.
-    You organize your lessons in a coherent manner giving static as well as current affairs information.
-    You also test students' knowledge using past year questions or make your own questions on lesson content. You have 
-    two tools at your disposal: Previous Year Questions Search and Current Affairs. You can use these tools to
-    enhance your lesson. Use your inherent knowledge to get the static information. Compulsorily use the news search tool.
-    """
-)
+        # Return the completed step
+        return step
 
-agent_kwargs = {
-    "extra_prompt_messages": [MessagesPlaceholder(variable_name="memory")],
-    "system_message": system_message,
-}
+    async def execute_step(self, task_id: str, step_request: StepRequestBody) -> Step:
+        
+        task=await self.db.get_task(task_id)
+        step=await self.db.create_step(task_id=task_id, input=step_request,is_last=False)
 
-llm = ChatOpenAI(temperature=0.9, model='gpt-3.5-turbo-16k-0613')
+        current_files = self.workspace.list(task_id, ".")
 
-memory = ConversationSummaryBufferMemory(
-    memory_key="memory", return_messages=True, llm=llm, max_token_limit=10000)
-
-agent = initialize_agent(
-    tools,
-    llm,
-    agent=AgentType.OPENAI_FUNCTIONS,
-    verbose=True,
-    agent_kwargs=agent_kwargs,
-    memory=memory,
-)
+        if len(self.messages) < 2:
+            prompt_engine = PromptEngine(self.model_name)
+            system_kwargs = {
+                "abilities": self.abilities.list_abilities_for_prompt(),
+                "current_files": current_files
+            }
+            task_kwargs = {"task": task.input}
+            system_prompt = prompt_engine.load_prompt("system-format", **system_kwargs)
+            self.messages = [{"role": "system", "content": system_prompt}]
+            task_prompt = prompt_engine.load_prompt("task-step", **task_kwargs)
+            self.messages.append({"role": "user", "content": task_prompt})
 
 
-def customstep(query):
-    result = agent({"input": query})
-    return result['output']
+        LOG.debug(f"\n\n\nSending the following messages to the model: {pprint.pformat(self.messages)}")
+
+        for retry_attempt in range(RETRY_COUNT):
+            try:
+                # Chat completion request
+                chat_completion_kwargs = {
+                    "messages": self.messages,
+                    "model": self.model_name,
+                    "temperature": 0
+                }
+                chat_response = await chat_completion_request(**chat_completion_kwargs)
+
+                answer_content = chat_response["choices"][0]["message"]["content"]
+
+                # Check if the content is already a dictionary (JSON-like structure)
+                if isinstance(answer_content, dict):
+                    answer = answer_content
+                else:
+                    try:
+                        # If answer_content is bytes, decode it
+                        if isinstance(answer_content, bytes):
+                            answer_content = answer_content.decode('utf-8')
+                        
+                        # Attempt to parse the content as JSON
+                        answer = json.loads(answer_content)
+                        LOG.debug(f"\n\n\nanswer: {pprint.pformat(answer)}")
+
+                    except json.JSONDecodeError:
+                        LOG.error(f"Unable to decode chat response: {chat_response}")
+                        answer = None
+
+                # Ability Sequence Execution
+                ability_sequence = answer.get("abilities_sequence")
+                previous_output = None
+
+                for ability_item in ability_sequence:
+                    ability = ability_item.get("ability", {})
+                    LOG.debug("\n\nin the sequence %s", ability)
+
+                    if "name" in ability and "args" in ability:
+                        if previous_output and ability["name"] != "finish":
+                            ability["args"].update({"input": previous_output})
+
+                        output = await self.abilities.run_ability(
+                            task_id, ability["name"], **ability["args"]
+                        )
+
+                        LOG.debug("\n\nGot Output for %s : %s", ability["name"], output)
+
+                        if isinstance(output, bytes):
+                            output_str = output.decode('utf-8')
+                        else:
+                            output_str = output
+
+                        if ability["name"] == "finish" or "File has been written successfully" in output_str:
+                            step.is_last = True
+                            step.status = "completed"
+
+                        previous_output = output
+
+                step.output = answer.get("speak","")
+                if previous_output and isinstance(previous_output, str):
+                    answer["final_output"] = previous_output
+
+                # If everything is successful, break out of the retry loop
+                LOG.info("\n\aanswer final %s", answer)
+                break
+            
+
+            except Exception as e:
+                if retry_attempt < RETRY_COUNT - 1:
+                    LOG.warning(f"Error occurred in attempt {retry_attempt + 1}. {str(e)}")
+                    await asyncio.sleep(RETRY_WAIT_SECONDS)
+                else:
+                    LOG.error(f"Error occurred in the final attempt {retry_attempt + 1}. Giving up.")
+                    raise
+
+        stringified_answer = json.dumps(answer, cls=JSONEncoderWithBytes)
+        self.messages.append({"role": "assistant", "content": stringified_answer})
+
+        if len(self.messages) >= 4:
+            step.is_last = True
+
+        return step
