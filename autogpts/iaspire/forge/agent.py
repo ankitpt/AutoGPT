@@ -337,7 +337,7 @@ class ForgeAgent(Agent):
                         if previous_output and ability["name"] != "finish":
                             ability["args"].update({"input": previous_output})
 
-                        output = await self.abilities.run_ability(
+                        output = await self.abilities.run_action(
                             task_id, ability["name"], **ability["args"]
                         )
 
