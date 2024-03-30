@@ -153,6 +153,7 @@ class ForgeAgent(Agent):
 
         previous_output = None
         previous_abilities=[]
+
         while not step.is_last:
     
             LOG.debug(f"\n\n\nSending the following messages to the model: {pprint.pformat(self.messages)}")
@@ -217,15 +218,18 @@ class ForgeAgent(Agent):
 
                             previous_output = output
 
-                    step.output = answer["thoughts"].get("speak","")
+                    if step.is_last: 
+                        step.output=output
+                    else:
+                        step.output = answer["thoughts"].get("text","")
+
                     if previous_output and isinstance(previous_output, str):
-                        answer["final_output"] = previous_output
+                        answer["previous_output"] = previous_output
 
                     # If everything is successful, break out of the retry loop
                     LOG.info("\n\aanswer final %s", answer)
                     break
                 
-
                 except Exception as e:
                     if retry_attempt < RETRY_COUNT - 1:
                         LOG.warning(f"Error occurred in attempt {retry_attempt + 1}. {str(e)}")
@@ -237,19 +241,18 @@ class ForgeAgent(Agent):
             stringified_answer = json.dumps(answer, cls=JSONEncoderWithBytes)
             self.messages.append({"role": "assistant", "content": stringified_answer})
             
-            task_kwargs = {"task": task.input, "abilities": self.abilities.list_abilities_for_prompt(),"previous_actions":previous_abilities}
+            if step.is_last:
+                break
 
+            task_kwargs = {"task": task.input, "abilities": self.abilities.list_abilities_for_prompt(),"previous_actions":previous_abilities}
+            task_prompt = prompt_engine.load_prompt("task-step", **task_kwargs)
             self.messages.append({"role": "user", "content": task_prompt})
 
            # if len(self.messages) >= 4:
             #    step.is_last = True
 
         return step
-
-
-
-
-
+    
 
     async def execute_step_half_baked(self, task_id: str, step_request: StepRequestBody) -> Step:
         """
