@@ -7,7 +7,7 @@ logger = ForgeLogger(__name__)
 
 @action(
     name="finish",
-    description="Use this to shut down once you have accomplished all of your goals,"
+    description="Use this to indicate that task is complete and the program should exit"
     " or when there are insurmountable problems that make it impossible"
     " for you to finish your task.",
     parameters=[
@@ -18,7 +18,7 @@ logger = ForgeLogger(__name__)
             "required": True,
         }
     ],
-    output_type="None",
+    output_type="string",
 )
 async def finish(
     agent,
