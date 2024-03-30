@@ -51,7 +51,6 @@ class JSONEncoderWithBytes(json.JSONEncoder):
         return super().default(obj)
 
 
-
 class ForgeAgent(Agent):
     """
     The goal of the Forge is to take care of the boilerplate code, so you can focus on
@@ -114,7 +113,7 @@ class ForgeAgent(Agent):
         """
         super().__init__(database, workspace)
         self.abilities = ActionRegister(self)
-        self.model_name = "gpt-3.5-turbo"
+        self.model_name = "gpt-4-1106-preview"
 
     async def create_task(self, task_request: TaskRequestBody) -> Task:
         """
@@ -131,6 +130,129 @@ class ForgeAgent(Agent):
             f"📦 Task created: {task.task_id} input: {task.input[:40]}{'...' if len(task.input) > 40 else ''}"
         )
         return task
+
+    async def execute_step(self, task_id: str, step_request: StepRequestBody) -> Step:
+        
+        task=await self.db.get_task(task_id)
+        step=await self.db.create_step(task_id=task_id, input=step_request,is_last=False)
+
+        #current_files = self.workspace.list(task_id, ".")
+
+        if len(self.messages) < 2:
+            prompt_engine = PromptEngine(self.model_name)
+            system_kwargs = {
+                "abilities": self.abilities.list_abilities_for_prompt(),
+            }
+            task_kwargs = {"task": task.input, "abilities": self.abilities.list_abilities_for_prompt(),}
+    
+            system_prompt = prompt_engine.load_prompt("system-format", **system_kwargs)
+            self.messages = [{"role": "system", "content": system_prompt}]
+            task_prompt = prompt_engine.load_prompt("task-step", **task_kwargs)
+            self.messages.append({"role": "user", "content": task_prompt})
+
+
+        previous_output = None
+        previous_abilities=[]
+
+        while not step.is_last:
+    
+            LOG.debug(f"\n\n\nSending the following messages to the model: {pprint.pformat(self.messages)}")
+
+            for retry_attempt in range(RETRY_COUNT):
+                try:
+                    # Chat completion request
+                    chat_completion_kwargs = {
+                        "messages": self.messages,
+                        "model": self.model_name,
+                        "temperature": 0,
+                        "response_format":{ "type": "json_object" }
+                    }
+                    chat_response = await chat_completion_request(**chat_completion_kwargs)
+
+                    answer_content = chat_response["choices"][0]["message"]["content"]
+
+                    # Check if the content is already a dictionary (JSON-like structure)
+                    if isinstance(answer_content, dict):
+                        answer = answer_content
+                    else:
+                        try:
+                            # If answer_content is bytes, decode it
+                            if isinstance(answer_content, bytes):
+                                answer_content = answer_content.decode('utf-8')
+                            
+                            # Attempt to parse the content as JSON
+                            answer = json.loads(answer_content)
+                            LOG.debug(f"\n\n\nanswer: {pprint.pformat(answer)}")
+
+                        except json.JSONDecodeError:
+                            LOG.error(f"Unable to decode chat response: {chat_response}")
+                            answer = None
+
+                    # Ability Sequence Execution
+                    ability_sequence = answer.get("abilities_sequence")
+#                    if len(ability_sequence)<2:
+ #                       LOG.info("Not found sufficent abilites to run")
+                        
+                    for ability_item in ability_sequence:
+                        ability = ability_item.get("ability", {})
+                        LOG.debug("\n\nin the sequence %s", ability)
+                        previous_abilities.append(ability)
+                        if "name" in ability and "args" in ability:
+                            if previous_output and ability["name"] != "finish":
+                                ability["args"].update({"input": previous_output})
+
+                            output = await self.abilities.run_action(
+                                task_id, ability["name"], **ability["args"]
+                            )
+
+                            LOG.debug("\n\nGot Output for %s : %s", ability["name"], output)
+
+                            if isinstance(output, bytes):
+                                output_str = output.decode('utf-8')
+                            else:
+                                output_str = output
+
+                            if ability["name"] == "finish" or "File has been written successfully" in output_str:
+                                step.is_last = True
+                                step.status = "completed"
+
+                            previous_output = output
+
+                    if step.is_last: 
+                        step.output=output
+                    else:
+                        step.output = answer["thoughts"].get("text","")
+
+                    if previous_output and isinstance(previous_output, str):
+                        answer["previous_output"] = previous_output
+
+                    # If everything is successful, break out of the retry loop
+                    LOG.info("\n\aanswer final %s", answer)
+                    break
+                
+                except Exception as e:
+                    if retry_attempt < RETRY_COUNT - 1:
+                        LOG.warning(f"Error occurred in attempt {retry_attempt + 1}. {str(e)}")
+                        await asyncio.sleep(RETRY_WAIT_SECONDS)
+                    else:
+                        LOG.error(f"Error occurred in the final attempt {retry_attempt + 1}. Giving up.")
+                        raise
+
+            stringified_answer = json.dumps(answer, cls=JSONEncoderWithBytes)
+            self.messages.append({"role": "assistant", "content": stringified_answer})
+            
+            if step.is_last:
+                break
+
+            task_kwargs = {"task": task.input, "abilities": self.abilities.list_abilities_for_prompt(),"previous_actions":previous_abilities}
+            task_prompt = prompt_engine.load_prompt("task-step", **task_kwargs)
+            self.messages.append({"role": "user", "content": task_prompt})
+
+           # if len(self.messages) >= 4:
+            #    step.is_last = True
+
+        return step
+    
 
     async def execute_step_half_baked(self, task_id: str, step_request: StepRequestBody) -> Step:
         """
@@ -274,20 +396,20 @@ class ForgeAgent(Agent):
         # Return the completed step
         return step
 
-    async def execute_step(self, task_id: str, step_request: StepRequestBody) -> Step:
+    async def execute_step_okayish(self, task_id: str, step_request: StepRequestBody) -> Step:
         
         task=await self.db.get_task(task_id)
         step=await self.db.create_step(task_id=task_id, input=step_request,is_last=False)
 
-        current_files = self.workspace.list(task_id, ".")
+        #current_files = self.workspace.list(task_id, ".")
 
         if len(self.messages) < 2:
             prompt_engine = PromptEngine(self.model_name)
             system_kwargs = {
                 "abilities": self.abilities.list_abilities_for_prompt(),
-                "current_files": current_files
             }
-            task_kwargs = {"task": task.input}
+            task_kwargs = {"task": task.input, "abilities": self.abilities.list_abilities_for_prompt(),}
+    
             system_prompt = prompt_engine.load_prompt("system-format", **system_kwargs)
             self.messages = [{"role": "system", "content": system_prompt}]
             task_prompt = prompt_engine.load_prompt("task-step", **task_kwargs)
@@ -302,7 +424,8 @@ class ForgeAgent(Agent):
                 chat_completion_kwargs = {
                     "messages": self.messages,
                     "model": self.model_name,
-                    "temperature": 0
+                    "temperature": 0,
+                    "response_format":{ "type": "json_object" }
                 }
                 chat_response = await chat_completion_request(**chat_completion_kwargs)
 
@@ -329,6 +452,9 @@ class ForgeAgent(Agent):
                 ability_sequence = answer.get("abilities_sequence")
                 previous_output = None
 
+                if len(ability_sequence)<2:
+                    LOG.info("Not found sufficent abilites to run")
+                    break
                 for ability_item in ability_sequence:
                     ability = ability_item.get("ability", {})
                     LOG.debug("\n\nin the sequence %s", ability)
@@ -337,7 +463,7 @@ class ForgeAgent(Agent):
                         if previous_output and ability["name"] != "finish":
                             ability["args"].update({"input": previous_output})
 
-                        output = await self.abilities.run_ability(
+                        output = await self.abilities.run_action(
                             task_id, ability["name"], **ability["args"]
                         )
 
@@ -354,7 +480,7 @@ class ForgeAgent(Agent):
 
                         previous_output = output
 
-                step.output = answer.get("speak","")
+                step.output = answer["thoughts"].get("speak","")
                 if previous_output and isinstance(previous_output, str):
                     answer["final_output"] = previous_output
 
@@ -372,6 +498,10 @@ class ForgeAgent(Agent):
                     raise
 
         stringified_answer = json.dumps(answer, cls=JSONEncoderWithBytes)
+        
+        
+        task_kwargs = {"task": task.input, "abilities": self.abilities.list_abilities_for_prompt(),"previous_abilities":previous_}
+
         self.messages.append({"role": "assistant", "content": stringified_answer})
 
         if len(self.messages) >= 4:
