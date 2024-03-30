@@ -1,0 +1,52 @@
+INPUT:
+    Book: Indian Polity for Civil Services Examinations
+    Query: Are constitutional amendments under Art 368 considered laws within the meaning of Art 13?
+
+OUTPUT:
+    <answer>
+    <component>
+        <text>The question of whether constitutional amendments under Article 368 are considered 'laws' within the meaning of Article 13 has been a subject of judicial scrutiny. According to the book, **Article 13** declares that all laws that are inconsistent with or in derogation of the Fundamental Rights shall be void. In this context, 'law' includes not only legislation but also ordinances, orders, bye-laws, rules, regulations, and notifications. However, the Supreme Court held in the *Kesavananda Bharati case (1973)* that a Constitutional amendment is not a 'law' within the meaning of Article 13. Therefore, the amendments to the Constitution made under Article 368 are not subject to the same scrutiny as ordinary laws under Article 13.</text>
+        <locations>
+        <location>
+            <chapter>judicial review</chapter>
+            <chapter_num>27</chapter_num>
+            <section>meaning of judicial review</section>
+            <subsection></subsection>
+        </location>
+        <location>
+            <chapter>fundamental rights</chapter>
+            <chapter_num>7</chapter_num>
+            <section>laws inconsistent with fundamental rights</section>
+            <subsection></subsection>
+        </location>
+        </locations>
+    </component>
+    <component>
+        <text>Furthermore, the book elaborates that *Article 368* provides the procedure for the amendment of the Constitution and explicitly states that the Parliament may, in exercise of its constituent power, amend by way of addition, variation, or repeal any provision of the Constitution. However, the Supreme Court in the *Kesavananda Bharati case* also ruled that the constituent power of Parliament under Article 368 does not enable it to alter the 'basic structure' of the Constitution. This implies that while Parliament has the power to amend the Constitution, this power is not absolute and is subject to certain inherent limitations, which are not defined under Article 13 but are part of the 'basic structure' doctrine.</text>
+        <locations>
+        <location>
+            <chapter>amendment of the constitution</chapter>
+            <chapter_num>10</chapter_num>
+            <section>procedure for amendment</section>
+            <subsection></subsection>
+        </location>
+        <location>
+            <chapter>basic structure of the constitution</chapter>
+            <chapter_num>11</chapter_num>
+            <section>elements of the basic structure</section>
+            <subsection></subsection>
+        </location>
+        </locations>
+    </component>
+    <component>
+        <text>It is important to note that the interpretation of the Constitution and its amendments is ultimately determined by the *Supreme Court*, which has the authority to declare any law unconstitutional if it contravenes the provisions of the Constitution. This judicial review is a fundamental aspect of the Indian legal system and ensures that the Constitution remains the supreme law of the land.</text>
+        <locations>
+        <location>
+            <chapter>judicial review</chapter>
+            <chapter_num>27</chapter_num>
+            <section>scope of judicial review</section>
+            <subsection></subsection>
+        </location>
+        </locations>
+    </component>
+    </answer>

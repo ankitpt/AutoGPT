@@ -1,6 +1,3 @@
 [submodule "autogpts/autogpt/tests/vcr_cassettes"]
 	path = autogpts/autogpt/tests/vcr_cassettes
 	url = https://github.com/Significant-Gravitas/Auto-GPT-test-cassettes
-[submodule "EPG_Agent/siqiq_tools/anthropic-tools"]
-	path = EPG_Agent/siqiq_tools/anthropic-tools
-	url = https://github.com/anthropics/anthropic-tools

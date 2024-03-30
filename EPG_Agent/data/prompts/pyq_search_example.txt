@@ -1,0 +1,51 @@
+INPUT:
+    Query: Revolt of 1857
+
+OUTPUT:
+    <questions>
+        <question id="0">    
+            <text>The educated middle class in India</text>    
+            <options>      
+                <option>(a) opposed the revolt of 1857</option>      
+                <option>(b) supported the revolt of 1857</option>      
+                <option>(c) remained neutral to the revolt of 1857</option>      
+                <option>(d) fought against native rulers</option>    
+            </options>  
+        </question>  
+        <question id="1">    
+            <text>With reference to the history of India, "Ulgulan" or the Great Tumult is the description of which of the following events?</text>    
+            <options>      
+                <option>(a) The Revolt of 1857</option>      
+                <option>(b) The Mappila Rebellion of 1921</option>      
+                <option>(c) The Indigo Revolt of 1859</option>      
+                <option>(d) Birsa Munda\'s Revolt of 1899 -1900</option>    
+            </options>  
+        </question>  
+        <question id="2">    
+            <text>Which one of the following upheavals took place in Bengal immediately after the Revolt of 1857?</text>    
+            <options>      
+                <option>(a) Sanyasi Rebellion</option>      
+                <option>(b) Santhal Rebellion</option>      
+                <option>(c) Indigo Disturbances</option>      
+                <option>(d) Pabna Disturbances</option>    
+            </options>  
+        </question>  
+        <question id="3">    
+            <text>Which one of the following places did Kunwar Singh, a prominent leader of the Revolt of 1857 belong to?</text>    
+            <options>      
+                <option>(a) Bihar</option>      
+                <option>(b) Madhya Pradesh</option>      
+                <option>(c) Rajasthan</option>      
+                <option>(d) Uttar Pradesh</option>    
+            </options>  
+        </question>  
+        <question id="4">    
+            <text>Which one of the following territories was not affected by the Revolt of 1857?</text>    
+            <options>      
+                <option>(a) Jhansi</option>      
+                <option>(b) Chittor</option>      
+                <option>(c) Jagdishpur</option>      
+                <option>(d) Lucknow</option>    
+            </options>  
+        </question>
+    </questions>
